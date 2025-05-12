@@ -1,0 +1,8 @@
+rename to label_automation
+count - not others - database
+month of may - test
+previous month - function
+datasebase over writes - not updates
+date column if we excute for last week - 
+1-execute current code
+2-execute with updated label - compare the code 

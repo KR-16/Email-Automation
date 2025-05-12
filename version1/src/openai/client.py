@@ -4,6 +4,8 @@ from typing import Dict, Optional
 import sys
 import os
 from datetime import datetime
+import time
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -11,7 +13,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from config.config import (
     OPENAI_API_KEY,
     CATEGORIZATION_PROMPT,
+    INITIAL_CALL_RESPONSE_PROMPT,
     INTERVIEW_RESPONSE_PROMPT,
+    APPLICATION_RESPONSE_PROMPT,
+    ASSESSMENT_RESPONSE_PROMPT,
     OFFER_RESPONSE_PROMPT,
     REJECTION_RESPONSE_PROMPT,
     EMAIL_LABELS
@@ -37,6 +42,57 @@ class OpenAIClient:
     def __init__(self):
         openai.api_key = OPENAI_API_KEY
         self.model = "gpt-4o-mini"  # Using the correct model name
+        self.rate_limit_delay = 1  # Initial delay in seconds
+        self.max_retries = 3
+        self.tokens_used = 0
+        self.last_reset_time = time.time()
+        self.rate_limit_window = 60  # 1 minute window
+
+    def _reset_token_count(self):
+        """Reset token count if rate limit window has passed"""
+        current_time = time.time()
+        if current_time - self.last_reset_time >= self.rate_limit_window:
+            self.tokens_used = 0
+            self.last_reset_time = current_time
+
+    def _update_token_count(self, tokens):
+        """Update token count and check rate limit"""
+        self._reset_token_count()
+        self.tokens_used += tokens
+        if self.tokens_used >= 200000:  # Rate limit threshold
+            wait_time = self.rate_limit_window - (time.time() - self.last_reset_time)
+            if wait_time > 0:
+                logger.warning(f"Rate limit approaching. Waiting {wait_time:.2f} seconds")
+                time.sleep(wait_time)
+                self._reset_token_count()
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=retry_if_exception_type(openai.error.RateLimitError)
+    )
+    def _make_api_call(self, messages, temperature=0.7, max_tokens=50):
+        """Make API call with rate limit handling"""
+        try:
+            self._reset_token_count()
+            response = openai.ChatCompletion.create(
+                model=self.model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            # Estimate tokens used (rough estimation)
+            estimated_tokens = len(str(messages)) // 4 + max_tokens
+            self._update_token_count(estimated_tokens)
+            return response
+        except openai.error.RateLimitError as e:
+            logger.warning(f"Rate limit hit: {str(e)}")
+            wait_time = float(str(e).split("try again in ")[-1].split("ms")[0]) / 1000
+            time.sleep(wait_time)
+            raise
+        except Exception as e:
+            logger.error(f"API call failed: {str(e)}")
+            raise
 
     def _log_ai_interaction(self, operation: str, input_data: str, output: str, error: Optional[str] = None) -> None:
         """
@@ -80,13 +136,12 @@ class OpenAIClient:
 
             prompt = CATEGORIZATION_PROMPT.format(email_content=email_content)
             
-            response = openai.ChatCompletion.create(
-                model=self.model,
+            response = self._make_api_call(
                 messages=[
                     {"role": "system", "content": "You are an email categorization assistant. Respond with ONLY one of these exact labels: Application, Interview, Offer, Rejection, Other."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,  # Lower temperature for more consistent categorization
+                temperature=0.3,
                 max_tokens=50
             )
             
@@ -135,8 +190,14 @@ class OpenAIClient:
                 return None
 
             # Select appropriate prompt based on category
-            if category == EMAIL_LABELS['INTERVIEW']:
+            if category == EMAIL_LABELS['INITIAL_CALL']:
+                prompt = INITIAL_CALL_RESPONSE_PROMPT
+            elif category == EMAIL_LABELS['INTERVIEW']:
                 prompt = INTERVIEW_RESPONSE_PROMPT
+            elif category == EMAIL_LABELS['APPLICATION']:
+                prompt = APPLICATION_RESPONSE_PROMPT
+            elif category == EMAIL_LABELS['ASSESSMENT']:
+                prompt = ASSESSMENT_RESPONSE_PROMPT
             elif category == EMAIL_LABELS['OFFER']:
                 prompt = OFFER_RESPONSE_PROMPT
             elif category == EMAIL_LABELS['REJECTION']:
@@ -146,13 +207,12 @@ class OpenAIClient:
 
             prompt = prompt.format(email_content=email_content)
             
-            response = openai.ChatCompletion.create(
-                model=self.model,
+            response = self._make_api_call(
                 messages=[
                     {"role": "system", "content": "You are an email response assistant."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.7,  # Higher temperature for more creative responses
+                temperature=0.7,
                 max_tokens=500
             )
             

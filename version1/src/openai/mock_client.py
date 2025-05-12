@@ -32,12 +32,42 @@ class MockOpenAIClient:
         
         # Sample responses for testing
         self.sample_responses = {
+            EMAIL_LABELS['INITIAL_CALL']: """
+Dear [Sender],
+
+Thank you for reaching out regarding the [Position] role. I am very interested in learning more about this opportunity.
+
+I would be happy to schedule an initial screening call at your convenience. Please let me know what time works best for you.
+
+Best regards,
+[Your Name]
+""",
             EMAIL_LABELS['INTERVIEW']: """
 Dear [Sender],
 
 Thank you for inviting me to interview for the [Position] role. I am very interested in the opportunity and would be happy to schedule an interview.
 
 I am available for a 30-minute call at your convenience. Please let me know what time works best for you.
+
+Best regards,
+[Your Name]
+""",
+            EMAIL_LABELS['APPLICATION']: """
+Dear [Sender],
+
+Thank you for confirming receipt of my application for the [Position] role. I have attached the requested documents and am happy to provide any additional information needed.
+
+I look forward to hearing about the next steps in the process.
+
+Best regards,
+[Your Name]
+""",
+            EMAIL_LABELS['ASSESSMENT']: """
+Dear [Sender],
+
+Thank you for providing the assessment details for the [Position] role. I have reviewed the requirements and am ready to proceed with the technical assessment.
+
+I will complete the assessment within the specified timeframe and submit it as requested.
 
 Best regards,
 [Your Name]
@@ -147,7 +177,7 @@ Best regards,
             email_content (str): The content of the email to categorize
             
         Returns:
-            str: Category label (Application, Interview, Offer, Rejection, Other)
+            str: Category label (Initial Call, Interview, Application, Assessment, Offer, Rejection, Other)
         """
         try:
             # Clean and prepare email content
@@ -181,6 +211,16 @@ Best regards,
                     'wish you the best'
                 ]),
                 
+                # Assessment patterns
+                (EMAIL_LABELS['ASSESSMENT'], [
+                    'technical assessment',
+                    'coding challenge',
+                    'assignment details',
+                    'assessment deadline',
+                    'test instructions',
+                    'evaluation criteria'
+                ]),
+                
                 # Interview patterns
                 (EMAIL_LABELS['INTERVIEW'], [
                     'interview scheduled',
@@ -191,6 +231,16 @@ Best regards,
                     'panel interview',
                     'hirevue',
                     'schedule a call'
+                ]),
+                
+                # Initial Call patterns
+                (EMAIL_LABELS['INITIAL_CALL'], [
+                    'initial screening',
+                    'first contact',
+                    'quick chat',
+                    'introductory call',
+                    'qualification check',
+                    'initial discussion'
                 ]),
                 
                 # Application patterns

@@ -9,51 +9,68 @@ from .settings import (
 
 # Email Labels
 EMAIL_LABELS = {
-    'APPLICATION': 'Application',
-    'INTERVIEW': 'Interview',
-    'OFFER': 'Offer',
-    'REJECTION': 'Rejection',
-    'OTHER': 'Other'
+    'INITIAL_CALL': 'Initial Call Automation',
+    'INTERVIEW': 'Interview Automation  ',
+    'APPLICATION': 'Application Automation',
+    'ASSESSMENT': 'Assessment Automation',
+    'OFFER': 'Offer Automation',
+    'REJECTION': 'Rejection Automation',
+    'OTHER': 'Other Automation'
 }
 
 # ChatGPT Prompts
 CATEGORIZATION_PROMPT = """
 You are an expert at categorizing job-related emails. Analyze the following email content and respond with EXACTLY ONE of the following labels and NOTHING ELSE:
 
-• Application 
+• Initial Call
   – If the email is about:
-  - Submitting a job application
-  - Sending a resume/CV
-  - Initial job inquiry
-  - Application status check
-  - Application confirmation
+  - First contact with candidate
+  - Schedule initial screening
+  - Basic qualification check
+  - Introduction to the role and company
 
-• Interview 
+• Interview
   – If the email is about:
   - Interview scheduling
   - Interview confirmation
   - Interview preparation details
   - Interview feedback
   - Interview follow-up
-  - Technical assessment details
 
-• Offer 
+• Application
+  – If the email is about:
+  - Application received confirmation
+  - Application status updates
+  - Request for additional information
+  - Document collection
+  - Application review process
+
+• Assessment
+  – If the email is about:
+  - Technical assessment instructions
+  - Assessment deadline reminders
+  - Assessment feedback
+  - Next steps after assessment
+  - Assessment results communication
+
+• Offer
   – If the email contains:
   - Job offer details
   - Salary/compensation discussion
   - Benefits information
-  - Start date discussion
+  - Start date confirmation
   - Offer acceptance/negotiation
-  - Contract details
+  - Onboarding preparation
 
-• Rejection 
+• Rejection
   – If the email:
   - Declines the application
   - Indicates the candidate wasn't selected
   - Suggests applying for other positions
   - Provides feedback on the application
+  - Professional closure
 
-• Other 
+• Other
   – If the email doesn't clearly fit the above categories or is about:
   - General company information
   - Networking
@@ -62,18 +79,34 @@ You are an expert at categorizing job-related emails. Analyze the following emai
   - Marketing content
 
 Respond with EXACTLY ONE of these labels and NOTHING ELSE:
-- Application
+- Initial Call
 - Interview
+- Application
+- Assessment
 - Offer
 - Rejection
 - Other
-
 
 Email content:
 {email_content}
 """
 
 # Response Generation Prompts
+INITIAL_CALL_RESPONSE_PROMPT = """
+You are a professional job candidate. Based on the following initial contact email, draft a concise and professional response that:
+
+1. Acknowledges receipt of the initial contact
+2. Expresses interest in the opportunity
+3. Confirms availability for initial screening
+4. Asks any relevant clarifying questions
+5. Maintains a professional and enthusiastic tone
+
+Keep the response under 150 words and focus on being clear and direct.
+
+Email content:
+{email_content}
+"""
+
 INTERVIEW_RESPONSE_PROMPT = """
 You are a professional job candidate. Based on the following interview-related email, draft a concise and professional response email that:
 
@@ -84,6 +117,36 @@ You are a professional job candidate. Based on the following interview-related e
 5. Maintains a professional and courteous tone
 
 Keep the response under 150 words and focus on being clear and direct.
+
+Email content:
+{email_content}
+"""
+
+APPLICATION_RESPONSE_PROMPT = """
+You are a professional job candidate. Based on the following application-related email, draft a professional response that:
+
+1. Acknowledges receipt of the application request/status
+2. Confirms understanding of the requirements
+3. Provides requested information or documents
+4. Asks any relevant clarifying questions
+5. Maintains a professional and proactive tone
+
+Keep the response under 150 words and focus on being thorough and responsive.
+
+Email content:
+{email_content}
+"""
+
+ASSESSMENT_RESPONSE_PROMPT = """
+You are a professional job candidate. Based on the following assessment-related email, draft a professional response that:
+
+1. Acknowledges receipt of the assessment details
+2. Confirms understanding of the requirements
+3. Asks any relevant clarifying questions
+4. Expresses readiness to proceed
+5. Maintains a professional and confident tone
+
+Keep the response under 150 words and focus on being prepared and professional.
 
 Email content:
 {email_content}

@@ -86,70 +86,69 @@ class EmailAssistant:
             )
         return self.gmail_clients[candidate['Email']]
 
-    def process_candidate_emails(self, candidate: Dict) -> None:
+    def process_candidate_emails(self, candidate: Dict, time_range: str = 'today') -> None:
         """
         Process emails for a single candidate.
         
-        This method:
-        1. Connects to candidate's Gmail account
-        2. Fetches today's emails
-        3. Processes each unprocessed email:
-           - Categorizes using AI
-           - Applies Gmail label
-           - Generates response if needed
-           - Updates label counts
-        
         Args:
-            candidate (Dict): Candidate information from Excel
+            candidate (Dict): Candidate information
+            time_range (str): Time range to process ('today', 'yesterday', 'last_week', 'last_month')
             
         Note:
-            - Only processes emails not already in the system
-            - Updates label counts in Excel
-            - Creates draft responses for important emails
+            - Fetches emails from Gmail
+            - Categorizes using AI
+            - Updates Excel records
+            - Creates response drafts
         """
         try:
-            # Get Gmail client for this candidate
+            # Get Gmail client for candidate
             gmail_client = self.get_gmail_client(candidate)
             
-            # Get today's emails
-            emails = gmail_client.get_today_emails()
+            # Get emails based on time range
+            emails = gmail_client.get_emails(time_range)
+            logger.info(f"Found {len(emails)} emails for candidate {candidate['Email']}")
             
             # Process each email
             for email in emails:
                 try:
-                    # Categorize email using AI
-                    category = self.openai_client.categorize_email(email['body'])
-                    
-                    # Apply Gmail label
-                    gmail_client.apply_label(email['id'], category)
-                    
-                    # Generate response if needed
-                    response = self.openai_client.generate_response(email['body'], category)
-                    
-                    # Store email record and update counts
-                    # Parse email date using email.utils.parsedate_to_datetime
-                    received_at = parsedate_to_datetime(email['date'])
-                    
-                    # Store email record
-                    email_data = {
-                        'id': email['id'],
-                        'subject': email['subject'],
-                        'sender': email['sender'],
-                        'category': category,
-                        'received_at': received_at,
-                        'response': response
-                    }
-                    self.excel_client.add_email_record(candidate['Id'], email_data)
-                    
-                    # Create draft response if generated
-                    if response:
-                        gmail_client.create_draft(
-                            to=email['sender'],
-                            subject=f"Re: {email['subject']}",
-                            body=response
-                        )
-                    
-                    logger.info(f"Successfully processed email {email['id']} for candidate {candidate['Email']}")
+                    # Check if email already processed
+                    if self.excel_client.email_records_df[
+                        self.excel_client.email_records_df['GmailMessageId'] == email['id']
+                    ].empty:
+                        # Categorize email using AI
+                        category = self.openai_client.categorize_email(email['body'])
+                        
+                        # Apply Gmail label
+                        gmail_client.apply_label(email['id'], category)
+                        
+                        # Generate response if needed
+                        response = self.openai_client.generate_response(email['body'], category)
+                        
+                        # Parse email date using email.utils.parsedate_to_datetime
+                        received_at = parsedate_to_datetime(email['date'])
+                        
+                        # Store email record
+                        email_data = {
+                            'id': email['id'],
+                            'subject': email['subject'],
+                            'sender': email['sender'],
+                            'category': category,
+                            'received_at': received_at,
+                            'response': response
+                        }
+                        self.excel_client.add_email_record(candidate['Id'], email_data)
+                        
+                        # Create draft response if generated
+                        if response:
+                            gmail_client.create_draft(
+                                to=email['sender'],
+                                subject=f"Re: {email['subject']}",
+                                body=response
+                            )
+                        
+                        logger.info(f"Successfully processed email {email['id']} for candidate {candidate['Email']}")
+                    else:
+                        logger.info(f"Email {email['id']} already processed")
                 except Exception as e:
                     logger.error(f"Error processing individual email {email.get('id', 'unknown')} for candidate {candidate['Email']}: {str(e)}")
                     continue  # Continue with next email even if one fails
@@ -157,15 +156,13 @@ class EmailAssistant:
         except Exception as e:
             logger.error(f"Error processing emails for candidate {candidate['Email']}: {str(e)}")
 
-    def run(self) -> None:
+    def run(self, time_range: str = 'today') -> None:
         """
         Main execution method.
         
-        This method:
-        1. Fetches all candidates from Excel
-        2. Processes emails for each candidate
-        3. Handles any errors during processing
-        
+        Args:
+            time_range (str): Time range to process ('today', 'yesterday', 'last_week', 'last_month')
+            
         Note:
             - Processes candidates in sequence
             - Logs all activities
@@ -179,7 +176,7 @@ class EmailAssistant:
             # Process emails for each candidate
             for candidate in candidates:
                 logger.info(f"Processing emails for candidate: {candidate['Email']}")
-                self.process_candidate_emails(candidate)
+                self.process_candidate_emails(candidate, time_range)
             
             logger.info("Email processing completed successfully")
         
@@ -189,4 +186,7 @@ class EmailAssistant:
 if __name__ == "__main__":
     # Create and run the email assistant
     assistant = EmailAssistant()
-    assistant.run() 
+    # assistant.run('today')
+    assistant.run('yesterday')
+    # assistant.run('last_week')
+    # assistant.run('last_month') 

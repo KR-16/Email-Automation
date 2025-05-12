@@ -7,12 +7,49 @@ def test_email_processing():
     # Test emails
     test_emails = [
         {
+            "subject": "Initial Screening Call",
+            "content": """
+            Dear Candidate,
+            
+            Thank you for your interest in the Software Engineer position.
+            We would like to schedule an initial screening call to discuss your experience.
+            Please let us know your availability for this week.
+            
+            Best regards,
+            HR Team
+            """
+        },
+        {
             "subject": "Interview Invitation",
             "content": """
             Dear Candidate,
             
             We would like to invite you for an interview for the Software Engineer position.
             Please let us know your availability for next week.
+            
+            Best regards,
+            HR Team
+            """
+        },
+        {
+            "subject": "Application Received",
+            "content": """
+            Dear Candidate,
+            
+            We have received your application for the Software Engineer position.
+            Please find attached the job description and next steps in the process.
+            
+            Best regards,
+            HR Team
+            """
+        },
+        {
+            "subject": "Technical Assessment",
+            "content": """
+            Dear Candidate,
+            
+            As part of our selection process, we would like you to complete a technical assessment.
+            Please find the instructions and deadline in the attached document.
             
             Best regards,
             HR Team
