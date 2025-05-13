@@ -199,6 +199,7 @@ config/settings.py
 *.log
 logs/
 data/
+data/Candidates.xlsx
 credentials.json
 token.json
 
