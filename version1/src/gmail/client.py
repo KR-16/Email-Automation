@@ -2,54 +2,39 @@
 Gmail Client Module
 ==================
 
-This module provides functionality to interact with Gmail accounts using IMAP and SMTP.
+This module provides functionality to interact with Gmail accounts using IMAP.
 It handles email operations such as:
 - Authentication with Gmail servers
 - Fetching emails for different time ranges
 - Applying labels
-- Creating draft responses
+- Email categorization
 
 The client supports:
 - Multiple Gmail accounts
 - Email categorization
 - Label management
-- Draft response creation
 - Date-based email filtering
 
 Author: Your Name
 Date: 2024
 """
 
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
-from googleapiclient.discovery import build
-import base64
 import email
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import logging
 import os
-import pickle
-from typing import List, Dict, Optional
 import sys
 import imaplib
-import smtplib
 from datetime import datetime, timedelta
-import openai
 import re
 from bs4 import BeautifulSoup
 import html2text
+import time
+from typing import List, Dict
 
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from config.config import (
-    GMAIL_CREDENTIALS_FILE,
-    GMAIL_TOKEN_FILE,
-    GMAIL_SCOPES,
-    EMAIL_LABELS
-)
+from config.config import EMAIL_LABELS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -62,14 +47,11 @@ class GmailClient:
     - Authenticate with Gmail
     - Manage email labels
     - Fetch and process emails
-    - Create draft responses
     
     Attributes:
         email (str): Gmail address
         password (str): Gmail password or app password
         imap_server (str): IMAP server address
-        smtp_server (str): SMTP server address
-        smtp_port (int): SMTP server port
     """
     
     def __init__(self, email: str, password: str):
@@ -89,8 +71,6 @@ class GmailClient:
         # Clean the password of any non-ASCII characters
         self.password = ''.join(char for char in password if ord(char) < 128)
         self.imap_server = "imap.gmail.com"
-        self.smtp_server = "smtp.gmail.com"
-        self.smtp_port = 587
         self.html_converter = html2text.HTML2Text()
         self.html_converter.ignore_links = False
         self.html_converter.ignore_images = True
@@ -108,8 +88,7 @@ class GmailClient:
         
         This method:
         1. Tests IMAP connection
-        2. Tests SMTP connection
-        3. Provides specific error messages for common issues
+        2. Provides specific error messages for common issues
         
         Raises:
             ValueError: If authentication fails with specific error message
@@ -119,12 +98,6 @@ class GmailClient:
             mail = imaplib.IMAP4_SSL(self.imap_server)
             mail.login(self.email, self.password)
             mail.logout()
-            
-            # Test SMTP connection
-            server = smtplib.SMTP(self.smtp_server, self.smtp_port)
-            server.starttls()
-            server.login(self.email, self.password)
-            server.quit()
             
             logger.info(f"Successfully authenticated Gmail account: {self.email}")
         
@@ -148,20 +121,21 @@ class GmailClient:
     
     def _create_labels(self) -> None:
         """
-        Create Gmail labels and their corresponding folders.
+        Create Gmail labels if they don't exist.
         
-        Creates the following labels and folders:
-        - Application
-        - Assessment
-        - Interview
-        - Offer
-        - Rejection
-        - Other
+        Creates the following labels from config:
+        - Initial Call Automation
+        - Interview Automation
+        - Application Automation
+        - Assessment Automation
+        - Offer Automation
+        - Rejection Automation
+        - Other Automation
         
         Note:
-            - Creates both labels and folders
-            - Ignores errors if they already exist
-            - Sets up proper folder structure
+            - Uses Gmail's IMAP extensions
+            - Properly formats label names
+            - Verifies label creation
         """
         try:
             # Connect to IMAP server
@@ -181,17 +155,29 @@ class GmailClient:
                 except Exception as e:
                     logger.warning(f"Failed to decode label: {str(e)}")
             
-            # Create only missing labels
-            labels = ['Application_automation', 'Interview_automation', 'Assessment_automation', 'Offer_automation', 'Rejection_automation', 'Other_automation']
+            # Create only missing labels from config
+            labels = list(EMAIL_LABELS.values())
             for label in labels:
                 if label not in existing_labels:
                     try:
-                        # Create label using bytes
-                        mail.create(label.encode('utf-8'))
+                        # Create label using Gmail's IMAP extensions
+                        result = mail.create(f'"{label}"')
+                        if result[0] != 'OK':
+                            # Check if the error is because the label already exists
+                            if b'[ALREADYEXISTS]' in result[1]:
+                                logger.info(f"Label {label} already exists, continuing...")
+                                continue
+                            else:
+                                raise Exception(f"Failed to create label: {result[1]}")
                         logger.info(f"Created new label: {label}")
-                    except imaplib.IMAP4.error as e:
-                        logger.error(f"Error creating label {label}: {str(e)}")
-                        raise
+                    except Exception as e:
+                        # If the error is about the label already existing, just log and continue
+                        if 'ALREADYEXISTS' in str(e):
+                            logger.info(f"Label {label} already exists, continuing...")
+                            continue
+                        else:
+                            logger.error(f"Error creating label {label}: {str(e)}")
+                            raise
                 else:
                     logger.info(f"Label already exists: {label}")
             
@@ -230,138 +216,9 @@ class GmailClient:
             logger.warning(f"Failed to clean HTML content: {str(e)}")
             return html_content
 
-    def _get_emails_by_date_range(self, start_date: datetime, end_date: datetime, batch_size: int = 10) -> List[Dict]:
+    def get_emails(self, time_range: str = 'today') -> List[Dict]:
         """
-        Get emails within a date range, processing in batches.
-        
-        Args:
-            start_date (datetime): Start date for email search
-            end_date (datetime): End date for email search
-            batch_size (int): Number of emails to process at once
-            
-        Returns:
-            List[Dict]: List of processed email dictionaries
-        """
-        try:
-            # Connect to IMAP server
-            mail = imaplib.IMAP4_SSL(self.imap_server)
-            mail.login(self.email, self.password)
-            
-            # Select inbox
-            mail.select('inbox')
-            
-            # Format dates for IMAP search
-            start_date_str = start_date.strftime("%d-%b-%Y")
-            end_date_str = end_date.strftime("%d-%b-%Y")
-            
-            # Search for emails within date range
-            _, messages = mail.search(None, f'(SINCE "{start_date_str}" BEFORE "{end_date_str}" ALL)')
-            
-            # Get total number of emails
-            total_emails = len(messages[0].split())
-            logger.info(f"Found {total_emails} emails to process")
-            
-            processed_emails = []
-            for i in range(0, total_emails, batch_size):
-                batch = messages[0].split()[i:i + batch_size]
-                logger.info(f"Processing batch {i//batch_size + 1} of {(total_emails + batch_size - 1)//batch_size}")
-                
-                batch_emails = []
-                for num in batch:
-                    _, msg = mail.fetch(num, '(RFC822)')
-                    email_body = msg[0][1]
-                    email_message = email.message_from_bytes(email_body)
-                    
-                    # Get email details
-                    email_id = num.decode()
-                    subject = email_message['subject'] or '(No Subject)'
-                    sender = email_message['from']
-                    date = email_message['date']
-                    
-                    # Get email body
-                    body = ""
-                    if email_message.is_multipart():
-                        for part in email_message.walk():
-                            content_type = part.get_content_type()
-                            content_disposition = str(part.get("Content-Disposition"))
-                            
-                            # Skip attachments
-                            if "attachment" in content_disposition:
-                                continue
-                                
-                            # Get text content
-                            if content_type == "text/plain":
-                                try:
-                                    payload = part.get_payload(decode=True)
-                                    # Try different encodings in sequence
-                                    for encoding in ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']:
-                                        try:
-                                            body = payload.decode(encoding)
-                                            break
-                                        except UnicodeDecodeError:
-                                            continue
-                                    if not body:  # If all encodings failed
-                                        body = payload.decode('utf-8', errors='replace')
-                                except Exception as e:
-                                    logger.warning(f"Failed to decode text/plain part: {str(e)}")
-                                    body = "(Failed to decode content)"
-                            elif content_type == "text/html":
-                                try:
-                                    payload = part.get_payload(decode=True)
-                                    # Try different encodings in sequence
-                                    for encoding in ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']:
-                                        try:
-                                            html_content = payload.decode(encoding)
-                                            body = self._clean_html_content(html_content)
-                                            break
-                                        except UnicodeDecodeError:
-                                            continue
-                                    if not body:  # If all encodings failed
-                                        html_content = payload.decode('utf-8', errors='replace')
-                                        body = self._clean_html_content(html_content)
-                                except Exception as e:
-                                    logger.warning(f"Failed to decode text/html part: {str(e)}")
-                                    body = "(Failed to decode content)"
-                    else:
-                        try:
-                            payload = email_message.get_payload(decode=True)
-                            if email_message.get_content_type() == "text/html":
-                                html_content = payload.decode('utf-8', errors='replace')
-                                body = self._clean_html_content(html_content)
-                            else:
-                                body = payload.decode('utf-8', errors='replace')
-                        except Exception as e:
-                            logger.warning(f"Failed to decode email body: {str(e)}")
-                    
-                    # Clean up the body
-                    body = body.strip()
-                    if not body:
-                        body = "(No content)"
-                    
-                    email_data = {
-                        'id': email_id,
-                        'subject': subject,
-                        'sender': sender,
-                        'date': date,
-                        'body': body
-                    }
-                    batch_emails.append(email_data)
-                
-                # Process the batch
-                processed_emails.extend(batch_emails)
-                logger.info(f"Processed {len(batch_emails)} emails in current batch")
-            
-            mail.logout()
-            logger.info(f"Successfully processed all {len(processed_emails)} emails from {start_date_str} to {end_date_str} for {self.email}")
-            return processed_emails
-        
-        except Exception as e:
-            logger.error(f"Error fetching emails: {str(e)}")
-            raise
-
-    def get_emails(self, time_range: str = 'today', batch_size: int = 10) -> List[Dict]:
-        """
-        Get emails based on specified time range, processing in batches.
+        Get emails based on specified time range.
         
         Args:
             time_range (str): Time range to fetch emails for:
@@ -369,7 +226,6 @@ class GmailClient:
                 - 'yesterday': Yesterday's emails
                 - 'last_week': Last 7 days
                 - 'last_month': Last 30 days
-            batch_size (int): Number of emails to process at once
                 
         Returns:
             List[Dict]: List of processed email data
@@ -392,75 +248,234 @@ class GmailClient:
             else:
                 raise ValueError(f"Invalid time range: {time_range}")
 
-            # Use the existing _get_emails_by_date_range method with batch processing
-            return self._get_emails_by_date_range(start_date, end_date, batch_size)
+            # Use the existing _get_emails_by_date_range method
+            return self._get_emails_by_date_range(start_date, end_date)
             
         except Exception as e:
             logger.error(f"Failed to fetch emails: {str(e)}")
             raise
 
-    def get_today_emails(self) -> List[Dict]:
-        """
-        Get today's emails (for backward compatibility).
-        
-        Returns:
-            List[Dict]: List of today's emails
-        """
-        return self.get_emails('today')
+    def _get_emails_by_date_range(self, start_date: datetime, end_date: datetime) -> List[Dict]:
+        mail = None
+        try:
+            # Connect to IMAP server with timeout
+            mail = imaplib.IMAP4_SSL(self.imap_server, timeout=30)
+            mail.login(self.email, self.password)
+            
+            # Select inbox and verify connection
+            status, data = mail.select('inbox')
+            if status != 'OK':
+                raise Exception(f"Failed to select inbox: {status}")
+            
+            # Format dates for IMAP search
+            start_date_str = start_date.strftime("%d-%b-%Y")
+            end_date_str = end_date.strftime("%d-%b-%Y")
+            
+            # Search for emails within date range
+            status, messages = mail.search(None, f'(SINCE "{start_date_str}" BEFORE "{end_date_str}" ALL)')
+            if status != 'OK':
+                raise Exception(f"Failed to search emails: {status}")
+            
+            # Get total number of emails
+            email_ids = messages[0].split()
+            total_emails = len(email_ids)
+            logger.info(f"Found {total_emails} emails to process")
+            
+            processed_emails = []
+            for num in email_ids:
+                try:
+                    # Add a small delay between fetches to avoid rate limiting
+                    time.sleep(0.5)  # 500ms delay
+                    
+                    # Fetch individual email with more detailed error handling
+                    logger.debug(f"Attempting to fetch email {num.decode()}")
+                    
+                    # First, check if the email exists and is accessible
+                    status, data = mail.fetch(num, '(FLAGS)')
+                    if status != 'OK':
+                        logger.error(f"Failed to check email {num.decode()}: Status {status}")
+                        continue
+                    
+                    # Now fetch the full email with retry logic
+                    max_retries = 3
+                    retry_count = 0
+                    email_body = None
+                    
+                    while retry_count < max_retries:
+                        try:
+                            # Reconnect if needed
+                            if retry_count > 0:
+                                try:
+                                    mail.close()
+                                    mail.logout()
+                                except:
+                                    pass
+                                mail = imaplib.IMAP4_SSL(self.imap_server, timeout=30)
+                                mail.login(self.email, self.password)
+                                mail.select('inbox')
+                            
+                            status, msg = mail.fetch(num, '(RFC822)')
+                            
+                            if status != 'OK' or not msg or not isinstance(msg, list) or len(msg) == 0:
+                                logger.error(f"Invalid response for email {num.decode()}: status={status}, msg_type={type(msg)}")
+                                break
 
-    def get_yesterday_emails(self) -> List[Dict]:
-        """
-        Get all emails received yesterday.
-        
-        Returns:
-            List[Dict]: List of email dictionaries containing id, subject, sender, date, and body
-        """
-        today = datetime.now()
-        yesterday = today - timedelta(days=1)
-        return self._get_emails_by_date_range(yesterday, today)
+                            if not isinstance(msg[0], tuple) or len(msg[0]) < 2:
+                                logger.error(f"Invalid message format for email {num.decode()}")
+                                break
 
-    def get_last_week_emails(self) -> List[Dict]:
-        """
-        Get all emails received in the last 7 days.
+                            email_body = msg[0][1]
+                            if not email_body:
+                                logger.error(f"Empty email body for email {num.decode()}")
+                                break
+
+                            # If we get here, we have a valid email body
+                            break
+                            
+                        except Exception as e:
+                            retry_count += 1
+                            if retry_count == max_retries:
+                                logger.error(f"Failed to fetch email {num.decode()} after {max_retries} attempts: {str(e)}")
+                                break
+                            logger.warning(f"Retry {retry_count} for email {num.decode()}: {str(e)}")
+                            time.sleep(1)  # Wait 1 second before retry
+                            continue
+
+                    if not email_body:
+                        logger.error(f"Could not fetch email body for {num.decode()} after all retries")
+                        continue
+
+                    try:
+                        email_message = email.message_from_bytes(email_body)
+                    except Exception as e:
+                        logger.error(f"Failed to parse email message for {num.decode()}: {str(e)}")
+                        continue
+
+                    # Get email details with better error handling
+                    email_id = num.decode()
+                    subject = email_message.get('subject', '(No Subject)')
+                    sender = email_message.get('from', '(No Sender)')
+                    date = email_message.get('date', datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S +0000"))
+
+                    # Get email body with improved handling
+                    body = ""
+                    if email_message.is_multipart():
+                        for part in email_message.walk():
+                            content_type = part.get_content_type()
+                            content_disposition = str(part.get("Content-Disposition", ""))
+                            
+                            # Skip attachments
+                            if "attachment" in content_disposition:
+                                continue
+                                
+                            # Get text content
+                            if content_type == "text/plain":
+                                try:
+                                    payload = part.get_payload(decode=True)
+                                    if payload:
+                                        body = payload.decode('utf-8', errors='replace')
+                                        break
+                                except Exception as e:
+                                    logger.warning(f"Failed to decode text/plain part: {str(e)}")
+                                    continue
+
+                            elif content_type == "text/html":
+                                try:
+                                    payload = part.get_payload(decode=True)
+                                    if payload:
+                                        html_content = payload.decode('utf-8', errors='replace')
+                                        body = self._clean_html_content(html_content)
+                                        break
+                                except Exception as e:
+                                    logger.warning(f"Failed to decode text/html part: {str(e)}")
+                                    continue
+                    else:
+                        try:
+                            payload = email_message.get_payload(decode=True)
+                            if payload:
+                                body = payload.decode('utf-8', errors='replace')
+                        except Exception as e:
+                            logger.warning(f"Failed to decode single part email: {str(e)}")
+                            body = "(Failed to decode content)"
+                    
+                    # Clean up the body
+                    body = body.strip() if body else "(No content)"
+                    
+                    email_data = {
+                        'id': email_id,
+                        'subject': subject,
+                        'sender': sender,
+                        'date': date,
+                        'body': body
+                    }
+                    processed_emails.append(email_data)
+                    logger.info(f"Successfully processed email {email_id}")
+
+                except Exception as e:
+                    logger.error(f"Failed to process email {num.decode()}: {str(e)}")
+                    continue
+            
+            logger.info(f"Successfully processed all {len(processed_emails)} emails")
+            return processed_emails
         
-        Returns:
-            List[Dict]: List of email dictionaries containing id, subject, sender, date, and body
-        """
-        today = datetime.now()
-        last_week = today - timedelta(days=7)
-        return self._get_emails_by_date_range(last_week, today)
+        except Exception as e:
+            logger.error(f"Error fetching emails: {str(e)}")
+            raise
+        finally:
+            if mail:
+                try:
+                    mail.close()
+                    mail.logout()
+                except:
+                    pass
     
-    def apply_label(self, message_id: str, label_name: str) -> None:
+    def apply_label(self, message_id: str, category: str) -> None:
         """
-        Apply a label to an email and move it to the corresponding folder.
+        Apply a label to an email using Gmail's IMAP extensions.
         
         Args:
             message_id (str): Gmail message ID
-            label_name (str): Label to apply (Application/Interview/Offer/Rejection/Other)
+            category (str): Category from config (e.g., 'INTERVIEW', 'APPLICATION')
             
         Note:
-            - Connects to Gmail
-            - Applies label to email
-            - Moves email to the labeled folder
-            - Handles connection cleanup
+            - Uses Gmail's X-GM-LABELS extension
+            - Gets label name from config
+            - Properly formats label name
+            - Handles label application in a single operation
         """
         try:
+            # Get label name from config
+            if category not in EMAIL_LABELS:
+                # If the category is a label value, find its key
+                category_key = None
+                for key, value in EMAIL_LABELS.items():
+                    if value == category:
+                        category_key = key
+                        break
+                
+                if category_key is None:
+                    raise ValueError(f"Invalid category: {category}. Must be one of {list(EMAIL_LABELS.keys())} or {list(EMAIL_LABELS.values())}")
+                
+                category = category_key
+            
+            label_name = EMAIL_LABELS[category]
+            
             # Connect to Gmail
             mail = imaplib.IMAP4_SSL(self.imap_server)
             mail.login(self.email, self.password)
             mail.select('INBOX')
             
-            # Apply label to email
-            mail.store(message_id, '+X-GM-LABELS', label_name)
+            # Format label name properly
+            formatted_label = label_name.strip()
             
-            # Copy email to labeled folder
-            mail.copy(message_id, label_name)
+            # Apply label using Gmail's X-GM-LABELS extension
+            result = mail.store(message_id, '+X-GM-LABELS', f'"{formatted_label}"')
             
-            # Delete from inbox (optional - comment out if you want to keep in inbox)
-            # mail.store(message_id, '+FLAGS', '\\Deleted')
-            # mail.expunge()
+            if result[0] != 'OK':
+                raise Exception(f"Failed to apply label: {result[1]}")
             
-            logger.info(f"Successfully applied label {label_name} and moved email {message_id} to {label_name} folder")
+            logger.info(f"Successfully applied label {formatted_label} to email {message_id}")
+            
         except Exception as e:
             logger.error(f"Failed to apply label: {str(e)}")
             raise
@@ -470,77 +485,3 @@ class GmailClient:
                 mail.logout()
             except:
                 pass
-
-    def _get_label_id(self, label_name: str) -> Optional[str]:
-        """
-        Get the ID of a Gmail label.
-        
-        Args:
-            label_name (str): Name of the label
-            
-        Returns:
-            Optional[str]: Label ID if found, None otherwise
-        """
-        try:
-            # Connect to Gmail
-            mail = imaplib.IMAP4_SSL(self.imap_server)
-            mail.login(self.email, self.password)
-            
-            # List all labels
-            response, data = mail.list()
-            
-            # Find the label
-            for item in data:
-                if label_name.encode() in item:
-                    return item.split(b'"')[-2].decode()
-            
-            return None
-        except Exception as e:
-            logger.error(f"Failed to get label ID: {str(e)}")
-            return None
-        finally:
-            try:
-                mail.logout()
-            except:
-                pass
-    
-    def create_draft(self, to: str, subject: str, body: str) -> None:
-        """
-        Create a draft email without sending it.
-        
-        Args:
-            to (str): Recipient email address
-            subject (str): Email subject
-            body (str): Email body content
-            
-        Note:
-            - Creates a draft email in Gmail
-            - Does not send the email
-            - Uses IMAP to create the draft
-        """
-        try:
-            # Create message
-            message = MIMEMultipart()
-            message['to'] = to
-            message['subject'] = subject
-            message['from'] = self.email
-            
-            # Add body
-            message.attach(MIMEText(body, 'plain'))
-            
-            # Connect to IMAP server
-            mail = imaplib.IMAP4_SSL(self.imap_server)
-            mail.login(self.email, self.password)
-            
-            # Select the Drafts folder
-            mail.select('[Gmail]/Drafts')
-            
-            # Append the message to Drafts
-            mail.append('[Gmail]/Drafts', '', imaplib.Time2Internaldate(datetime.now()), str(message).encode())
-            
-            mail.logout()
-            logger.info(f"Successfully created draft email to {to}")
-        
-        except Exception as e:
-            logger.error(f"Error creating draft: {str(e)}")
-            raise 

@@ -9,27 +9,27 @@ from .settings import (
 
 # Email Labels
 EMAIL_LABELS = {
-    'INITIAL_CALL': 'Initial Call Automation',
-    'INTERVIEW': 'Interview Automation  ',
-    'APPLICATION': 'Application Automation',
-    'ASSESSMENT': 'Assessment Automation',
-    'OFFER': 'Offer Automation',
-    'REJECTION': 'Rejection Automation',
-    'OTHER': 'Other Automation'
+    'INITIAL_CALL': 'Initial_Call_Automation',
+    'INTERVIEW': 'Interview_Automation',
+    'APPLICATION': 'Application_Automation',
+    'ASSESSMENT': 'Assessment_Automation',
+    'OFFER': 'Offer_Automation',
+    'REJECTION': 'Rejection_Automation',
+    'OTHER': 'Other_Automation'
 }
 
 # ChatGPT Prompts
 CATEGORIZATION_PROMPT = """
 You are an expert at categorizing job-related emails. Analyze the following email content and respond with EXACTLY ONE of the following labels and NOTHING ELSE:
 
-• Initial Call
+• INITIAL_CALL
   – If the email is about:
   - First contact with candidate
   - Schedule initial screening
   - Basic qualification check
   - Introduction to the role and company
 
-• Interview
+• INTERVIEW
   – If the email is about:
   - Interview scheduling
   - Interview confirmation
@@ -37,7 +37,7 @@ You are an expert at categorizing job-related emails. Analyze the following emai
   - Interview feedback
   - Interview follow-up
 
-• Application
+• APPLICATION
   – If the email is about:
   - Application received confirmation
   - Application status updates
@@ -45,7 +45,7 @@ You are an expert at categorizing job-related emails. Analyze the following emai
   - Document collection
   - Application review process
 
-• Assessment
+• ASSESSMENT
   – If the email is about:
   - Technical assessment instructions
   - Assessment deadline reminders
@@ -53,7 +53,7 @@ You are an expert at categorizing job-related emails. Analyze the following emai
   - Next steps after assessment
   - Assessment results communication
 
-• Offer
+• OFFER
   – If the email contains:
   - Job offer details
   - Salary/compensation discussion
@@ -62,7 +62,7 @@ You are an expert at categorizing job-related emails. Analyze the following emai
   - Offer acceptance/negotiation
   - Onboarding preparation
 
-• Rejection
+• REJECTION
   – If the email:
   - Declines the application
   - Indicates the candidate wasn't selected
@@ -70,7 +70,7 @@ You are an expert at categorizing job-related emails. Analyze the following emai
   - Provides feedback on the application
   - Professional closure
 
-• Other
+• OTHER
   – If the email doesn't clearly fit the above categories or is about:
   - General company information
   - Networking
@@ -79,13 +79,13 @@ You are an expert at categorizing job-related emails. Analyze the following emai
   - Marketing content
 
 Respond with EXACTLY ONE of these labels and NOTHING ELSE:
-- Initial Call
-- Interview
-- Application
-- Assessment
-- Offer
-- Rejection
-- Other
+- INITIAL_CALL
+- INTERVIEW
+- APPLICATION
+- ASSESSMENT
+- OFFER
+- REJECTION
+- OTHER
 
 Email content:
 {email_content}

@@ -138,7 +138,7 @@ class OpenAIClient:
             
             response = self._make_api_call(
                 messages=[
-                    {"role": "system", "content": "You are an email categorization assistant. Respond with ONLY one of these exact labels: Application, Interview, Offer, Rejection, Other."},
+                    {"role": "system", "content": "You are an email categorization assistant. Respond with ONLY one of these exact labels: INITIAL_CALL, INTERVIEW, APPLICATION, ASSESSMENT, OFFER, REJECTION, OTHER."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.3,
@@ -148,8 +148,21 @@ class OpenAIClient:
             category = response.choices[0].message.content.strip()
             logger.info(f"Raw category response: {category}")
             
-            # Validate category
-            if category not in EMAIL_LABELS.values():
+            # Map the base category to the automation label
+            category_mapping = {
+                'INITIAL_CALL': EMAIL_LABELS['INITIAL_CALL'],
+                'INTERVIEW': EMAIL_LABELS['INTERVIEW'],
+                'APPLICATION': EMAIL_LABELS['APPLICATION'],
+                'ASSESSMENT': EMAIL_LABELS['ASSESSMENT'],
+                'OFFER': EMAIL_LABELS['OFFER'],
+                'REJECTION': EMAIL_LABELS['REJECTION'],
+                'OTHER': EMAIL_LABELS['OTHER']
+            }
+            
+            # Map the category to its automation label
+            if category in category_mapping:
+                category = category_mapping[category]
+            else:
                 logger.warning(f"Invalid category returned: {category}. Defaulting to 'Other'")
                 category = EMAIL_LABELS['OTHER']
             
