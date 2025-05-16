@@ -63,13 +63,34 @@ class GmailClient:
             password (str): Gmail password or app password
             
         Note:
-            - Cleans password of any non-ASCII characters
+            - Cleans and validates password format
             - Tests authentication before proceeding
             - Creates required labels if they don't exist
         """
-        self.email = email
-        # Clean the password of any non-ASCII characters
-        self.password = ''.join(char for char in password if ord(char) < 128)
+        self.email = email.strip()
+        
+        # Clean and validate password
+        if not password:
+            raise ValueError("Password cannot be empty")
+            
+        # Remove ALL whitespace and ensure it's a string
+        self.password = ''.join(str(password).split())
+        
+        # Validate password format
+        if len(self.password) != 16:
+            raise ValueError(
+                f"Invalid App Password length: {len(self.password)} characters. "
+                "App Password must be exactly 16 characters. "
+                "Please generate a new App Password at: https://myaccount.google.com/apppasswords"
+            )
+            
+        if not all(c.isalnum() for c in self.password):
+            raise ValueError(
+                "App Password contains invalid characters. "
+                "App Password should only contain letters and numbers. "
+                "Please generate a new App Password at: https://myaccount.google.com/apppasswords"
+            )
+        
         self.imap_server = "imap.gmail.com"
         self.html_converter = html2text.HTML2Text()
         self.html_converter.ignore_links = False

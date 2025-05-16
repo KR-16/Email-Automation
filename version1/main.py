@@ -12,6 +12,7 @@ from src.excel.client import ExcelClient
 from src.gmail.client import GmailClient
 from src.openai.client import OpenAIClient
 from config.config import EXCEL_FILE_PATH
+from count_labels import LabelCounter
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,6 +52,11 @@ class EmailAssistant:
         candidates = self.excel_client.get_candidates()
         for candidate in candidates:
             self.process_candidate_emails(candidate, time_range)
+        # After all categorization and labeling, call the label counting/report
+        logger.info("All email categorization and labeling complete. Generating label count report...")
+        counter = LabelCounter(EXCEL_FILE_PATH)
+        counter.run()
+        logger.info("Label count report generated.")
 
 if __name__ == "__main__":
     assistant = EmailAssistant()
