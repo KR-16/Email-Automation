@@ -6,6 +6,7 @@ import os
 from datetime import datetime
 import time
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+import re
 
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -134,11 +135,14 @@ class OpenAIClient:
                 logger.warning("Empty email content received, defaulting to 'Other'")
                 return EMAIL_LABELS['OTHER']
 
+            # Additional cleaning specific to categorization
+            email_content = self._clean_for_categorization(email_content)
+
             prompt = CATEGORIZATION_PROMPT.format(email_content=email_content)
             
             response = self._make_api_call(
                 messages=[
-                    {"role": "system", "content": "You are an email categorization assistant. Respond with ONLY one of these exact labels: INITIAL_CALL, INTERVIEW, APPLICATION, ASSESSMENT, OFFER, REJECTION, OTHER."},
+                    {"role": "system", "content": "You are an email categorization assistant. Your task is to analyze the cleaned email content and categorize it into one of the predefined categories. Focus on the main message and intent of the email, ignoring any technical elements or formatting. Respond with ONLY one of these exact labels: INITIAL_CALL, INTERVIEW, APPLICATION, ASSESSMENT, OFFER, REJECTION, OTHER."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.3,
@@ -186,6 +190,66 @@ class OpenAIClient:
                 error=error_msg
             )
             return EMAIL_LABELS['OTHER']
+
+    def _clean_for_categorization(self, text: str) -> str:
+        """
+        Additional cleaning specific to email categorization.
+        Ensures only plain text content is processed.
+        
+        Args:
+            text (str): Text to clean
+            
+        Returns:
+            str: Cleaned text optimized for categorization
+        """
+        try:
+            # First, remove all HTML tags and their content
+            text = re.sub(r'<[^>]+>', '', text)
+            
+            # Remove HTML entities
+            text = re.sub(r'&[a-zA-Z]+;', '', text)
+            
+            # Remove any remaining technical elements
+            text = re.sub(r'Content-Type:.*?\n', '', text, flags=re.DOTALL)
+            text = re.sub(r'Content-Transfer-Encoding:.*?\n', '', text, flags=re.DOTALL)
+            text = re.sub(r'MIME-Version:.*?\n', '', text, flags=re.DOTALL)
+            
+            # Remove any remaining quoted text
+            text = re.sub(r'On.*wrote:.*', '', text, flags=re.DOTALL)
+            
+            # Remove any remaining signatures
+            text = re.sub(r'--\s*\n.*', '', text, flags=re.DOTALL)
+            
+            # Remove any remaining headers
+            text = re.sub(r'From:.*?\n', '', text, flags=re.DOTALL)
+            text = re.sub(r'To:.*?\n', '', text, flags=re.DOTALL)
+            text = re.sub(r'Subject:.*?\n', '', text, flags=re.DOTALL)
+            text = re.sub(r'Date:.*?\n', '', text, flags=re.DOTALL)
+            
+            # Remove URLs
+            text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', text)
+            
+            # Remove email addresses
+            text = re.sub(r'[\w\.-]+@[\w\.-]+\.\w+', '', text)
+            
+            # Remove multiple spaces and newlines
+            text = re.sub(r'\s+', ' ', text)
+            text = re.sub(r'\n\s*\n', '\n', text)
+            
+            # Remove any remaining special characters except basic punctuation
+            text = re.sub(r'[^\w\s.,!?-]', '', text)
+            
+            # Final cleanup
+            text = text.strip()
+            
+            # If the text is empty after cleaning, return a placeholder
+            if not text:
+                return "(No readable content)"
+                
+            return text
+        except Exception as e:
+            logger.warning(f"Failed to clean text for categorization: {str(e)}")
+            return text
 
     def generate_response(self, email_content: str, category: str) -> Optional[str]:
         """

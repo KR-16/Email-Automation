@@ -12,7 +12,7 @@ from src.excel.client import ExcelClient
 from src.gmail.client import GmailClient
 from src.openai.client import OpenAIClient
 from config.config import EXCEL_FILE_PATH
-from count_labels import LabelCounter
+# from count_labels import LabelCounter
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,6 +41,11 @@ class EmailAssistant:
         emails = gmail_client.get_emails(time_range)
         logger.info(f"Found {len(emails)} emails for candidate {candidate['candidateEmail__c']}")
         for email in emails:
+            # Check if email already has an automation label
+            if gmail_client.has_automation_label(email['id']):
+                logger.info(f"Email {email['id']} already categorized, skipping")
+                continue
+                
             body = email.get('body')
             if not body:
                 continue
@@ -53,11 +58,11 @@ class EmailAssistant:
         for candidate in candidates:
             self.process_candidate_emails(candidate, time_range)
         # After all categorization and labeling, call the label counting/report
-        logger.info("All email categorization and labeling complete. Generating label count report...")
-        counter = LabelCounter(EXCEL_FILE_PATH)
-        counter.run()
-        logger.info("Label count report generated.")
+        # logger.info("All email categorization and labeling complete. Generating label count report...")
+        # counter = LabelCounter(EXCEL_FILE_PATH)
+        # counter.run()
+        # logger.info("Label count report generated.")
 
 if __name__ == "__main__":
     assistant = EmailAssistant()
-    assistant.run(time_range="yesterday") 
+    assistant.run(time_range="last_week") 

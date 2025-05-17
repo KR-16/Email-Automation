@@ -232,10 +232,68 @@ class GmailClient:
             # Remove quoted text
             text = re.sub(r'On.*wrote:.*', '', text, flags=re.DOTALL)
             
+            # Remove URLs
+            text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', text)
+            
+            # Remove email addresses
+            text = re.sub(r'[\w\.-]+@[\w\.-]+\.\w+', '', text)
+            
+            # Remove special characters and extra punctuation
+            text = re.sub(r'[^\w\s.,!?-]', '', text)
+            
+            # Remove multiple newlines
+            text = re.sub(r'\n\s*\n', '\n', text)
+            
+            # Remove multiple spaces
+            text = re.sub(r'\s+', ' ', text)
+            
             return text.strip()
         except Exception as e:
             logger.warning(f"Failed to clean HTML content: {str(e)}")
             return html_content
+
+    def _clean_email_body(self, body: str) -> str:
+        """
+        Clean and extract human-readable content from email body.
+        
+        Args:
+            body (str): Raw email body content
+            
+        Returns:
+            str: Clean human-readable text
+        """
+        try:
+            # Remove email headers
+            body = re.sub(r'From:.*?\n', '', body, flags=re.DOTALL)
+            body = re.sub(r'To:.*?\n', '', body, flags=re.DOTALL)
+            body = re.sub(r'Subject:.*?\n', '', body, flags=re.DOTALL)
+            body = re.sub(r'Date:.*?\n', '', body, flags=re.DOTALL)
+            
+            # Remove quoted text
+            body = re.sub(r'On.*wrote:.*', '', body, flags=re.DOTALL)
+            
+            # Remove email signatures
+            body = re.sub(r'--\s*\n.*', '', body, flags=re.DOTALL)
+            
+            # Remove URLs
+            body = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', body)
+            
+            # Remove email addresses
+            body = re.sub(r'[\w\.-]+@[\w\.-]+\.\w+', '', body)
+            
+            # Remove special characters and extra punctuation
+            body = re.sub(r'[^\w\s.,!?-]', '', body)
+            
+            # Remove multiple newlines
+            body = re.sub(r'\n\s*\n', '\n', body)
+            
+            # Remove multiple spaces
+            body = re.sub(r'\s+', ' ', body)
+            
+            return body.strip()
+        except Exception as e:
+            logger.warning(f"Failed to clean email body: {str(e)}")
+            return body
 
     def get_emails(self, time_range: str = 'today') -> List[Dict]:
         """
@@ -419,8 +477,11 @@ class GmailClient:
                             logger.warning(f"Failed to decode single part email: {str(e)}")
                             body = "(Failed to decode content)"
                     
-                    # Clean up the body
-                    body = body.strip() if body else "(No content)"
+                    # Clean up the body to get only human-readable content
+                    body = self._clean_email_body(body) if body else "(No content)"
+                    
+                    # Additional cleaning to ensure only human-readable text
+                    body = self._ensure_human_readable(body)
                     
                     email_data = {
                         'id': email_id,
@@ -449,7 +510,65 @@ class GmailClient:
                     mail.logout()
                 except:
                     pass
-    
+
+    def _ensure_human_readable(self, text: str) -> str:
+        """
+        Ensure the text contains only human-readable content.
+        
+        Args:
+            text (str): Text to clean
+            
+        Returns:
+            str: Clean human-readable text
+        """
+        try:
+            # Remove any remaining HTML tags
+            text = re.sub(r'<[^>]+>', '', text)
+            
+            # Remove any remaining URLs
+            text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', text)
+            
+            # Remove any remaining email addresses
+            text = re.sub(r'[\w\.-]+@[\w\.-]+\.\w+', '', text)
+            
+            # Remove any remaining special characters except basic punctuation
+            text = re.sub(r'[^\w\s.,!?-]', '', text)
+            
+            # Remove multiple spaces
+            text = re.sub(r'\s+', ' ', text)
+            
+            # Remove multiple newlines
+            text = re.sub(r'\n\s*\n', '\n', text)
+            
+            # Remove any remaining quoted text
+            text = re.sub(r'On.*wrote:.*', '', text, flags=re.DOTALL)
+            
+            # Remove any remaining signatures
+            text = re.sub(r'--\s*\n.*', '', text, flags=re.DOTALL)
+            
+            # Remove any remaining headers
+            text = re.sub(r'From:.*?\n', '', text, flags=re.DOTALL)
+            text = re.sub(r'To:.*?\n', '', text, flags=re.DOTALL)
+            text = re.sub(r'Subject:.*?\n', '', text, flags=re.DOTALL)
+            text = re.sub(r'Date:.*?\n', '', text, flags=re.DOTALL)
+            
+            # Remove any remaining technical content
+            text = re.sub(r'Content-Type:.*?\n', '', text, flags=re.DOTALL)
+            text = re.sub(r'Content-Transfer-Encoding:.*?\n', '', text, flags=re.DOTALL)
+            text = re.sub(r'MIME-Version:.*?\n', '', text, flags=re.DOTALL)
+            
+            # Final cleanup
+            text = text.strip()
+            
+            # If the text is empty after cleaning, return a placeholder
+            if not text:
+                return "(No readable content)"
+            
+            return text
+        except Exception as e:
+            logger.warning(f"Failed to ensure human-readable content: {str(e)}")
+            return text
+
     def apply_label(self, message_id: str, category: str) -> None:
         """
         Apply a label to an email using Gmail's IMAP extensions.
@@ -500,6 +619,55 @@ class GmailClient:
         except Exception as e:
             logger.error(f"Failed to apply label: {str(e)}")
             raise
+        finally:
+            try:
+                mail.close()
+                mail.logout()
+            except:
+                pass
+
+    def has_automation_label(self, message_id: str) -> bool:
+        """
+        Check if an email has any automation labels.
+        
+        Args:
+            message_id (str): Gmail message ID
+            
+        Returns:
+            bool: True if email has any automation label, False otherwise
+        """
+        try:
+            # Connect to Gmail
+            mail = imaplib.IMAP4_SSL(self.imap_server)
+            mail.login(self.email, self.password)
+            mail.select('INBOX')
+            
+            # Get labels for the message
+            status, data = mail.fetch(message_id, '(X-GM-LABELS)')
+            if status != 'OK':
+                raise Exception(f"Failed to get labels: {status}")
+                
+            # Parse labels
+            labels = data[0].decode('utf-8').split('"')[1::2]
+            
+            # Check if any automation label exists
+            automation_labels = [
+                'Initial_Call_Automation',
+                'Interview_Automation',
+                'Application_Automation',
+                'Assessment_Automation',
+                'Offer_Automation',
+                'Rejection_Automation',
+                'Other_Automation'
+            ]
+            
+            has_label = any(label in labels for label in automation_labels)
+            logger.info(f"Email {message_id} has automation label: {has_label}")
+            return has_label
+            
+        except Exception as e:
+            logger.error(f"Failed to check automation labels: {str(e)}")
+            return False
         finally:
             try:
                 mail.close()
