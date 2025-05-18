@@ -30,39 +30,61 @@ class EmailAssistant:
 
     def get_gmail_client(self, candidate):
         if candidate['candidateEmail__c'] not in self.gmail_clients:
-            self.gmail_clients[candidate['candidateEmail__c']] = GmailClient(
-                email=candidate['candidateEmail__c'],
-                password=candidate['candidatePassword__c']
-            )
+            try:
+                self.gmail_clients[candidate['candidateEmail__c']] = GmailClient(
+                    email=candidate['candidateEmail__c'],
+                    password=candidate['candidatePassword__c']
+                )
+                logger.info(f"Successfully created Gmail client for {candidate['candidateEmail__c']}")
+            except Exception as e:
+                logger.error(f"Failed to create Gmail client for {candidate['candidateEmail__c']}: {str(e)}")
+                raise
         return self.gmail_clients[candidate['candidateEmail__c']]
 
     def process_candidate_emails(self, candidate, time_range='today'):
-        gmail_client = self.get_gmail_client(candidate)
-        emails = gmail_client.get_emails(time_range)
-        logger.info(f"Found {len(emails)} emails for candidate {candidate['candidateEmail__c']}")
-        for email in emails:
-            # Check if email already has an automation label
-            if gmail_client.has_automation_label(email['id']):
-                logger.info(f"Email {email['id']} already categorized, skipping")
-                continue
-                
-            body = email.get('body')
-            if not body:
-                continue
-            category = self.openai_client.categorize_email(body)
-            gmail_client.apply_label(email['id'], category)
-            logger.info(f"Categorized and labeled email {email['id']} as {category}")
+        try:
+            gmail_client = self.get_gmail_client(candidate)
+            emails = gmail_client.get_emails(time_range)
+            
+            for email in emails:
+                try:
+                    if not gmail_client.has_automation_label(email['id']):
+                        category = self.openai_client.categorize_email(email['body'])
+                        gmail_client.apply_label(email['id'], category)
+                        logger.info(f"Successfully processed email {email['id']}")
+                    else:
+                        logger.info(f"Email {email['id']} already processed")
+                except Exception as e:
+                    logger.error(f"Error processing email {email['id']}: {str(e)}")
+                    continue
+        except Exception as e:
+            logger.error(f"Error processing emails for {candidate['candidateEmail__c']}: {str(e)}")
+            raise
 
     def run(self, time_range='today'):
-        candidates = self.excel_client.get_candidates()
-        for candidate in candidates:
-            self.process_candidate_emails(candidate, time_range)
-        # After all categorization and labeling, call the label counting/report
-        # logger.info("All email categorization and labeling complete. Generating label count report...")
-        # counter = LabelCounter(EXCEL_FILE_PATH)
-        # counter.run()
-        # logger.info("Label count report generated.")
+        try:
+            candidates = self.excel_client.get_candidates()
+            logger.info(f"Found {len(candidates)} candidates")
+            
+            for candidate in candidates:
+                try:
+                    logger.info(f"Processing candidate: {candidate['candidateEmail__c']}")
+                    self.process_candidate_emails(candidate, time_range)
+                except Exception as e:
+                    logger.error(f"Error processing candidate {candidate['candidateEmail__c']}: {str(e)}")
+                    # Continue with next candidate instead of raising the exception
+                    continue
+            
+            logger.info("Email processing completed successfully")
+        
+        except Exception as e:
+            logger.error(f"Application error: {str(e)}")
+            raise
 
 if __name__ == "__main__":
-    assistant = EmailAssistant()
-    assistant.run(time_range="last_week") 
+    try:
+        assistant = EmailAssistant()
+        assistant.run(time_range="last_week")
+    except Exception as e:
+        logger.error(f"Fatal error in main execution: {str(e)}")
+        raise 
