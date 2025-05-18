@@ -169,11 +169,21 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Only these 4 labels will be processed
+# SELECTED_LABELS = {
+#     'Application_Automation': 'Application',
+#     'Assessment_Automation': 'Assessment',
+#     'Initial_Call_Automation': 'Initial Call',
+#     'Interview_Automation': 'Interview'
+# }
+
 SELECTED_LABELS = {
     'Application_Automation': 'Application',
     'Assessment_Automation': 'Assessment',
     'Initial_Call_Automation': 'Initial Call',
-    'Interview_Automation': 'Interview'
+    'Interview_Automation': 'Interview',
+    'Rejection_Automation': 'Rejection',
+    'Offer_Automation': 'Offer',
+    'Other_Automation': 'Other'
 }
 
 class LabelCounter:
