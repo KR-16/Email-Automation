@@ -13,6 +13,7 @@ from src.gmail.client import GmailClient
 from src.openai.client import OpenAIClient
 from config.config import EXCEL_FILE_PATH
 # from count_labels import LabelCounter
+import argparse
 
 logging.basicConfig(
     level=logging.INFO,
@@ -82,9 +83,19 @@ class EmailAssistant:
             raise
 
 if __name__ == "__main__":
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description='Email Assistant - Process and categorize emails')
+    parser.add_argument('--time-range', 
+                      choices=['today', 'yesterday', 'last_week', 'last_month'],
+                      default='today',
+                      help='Time range for processing emails (default: today)')
+    
+    # Parse arguments
+    args = parser.parse_args()
+    
     try:
         assistant = EmailAssistant()
-        assistant.run(time_range="last_week")
+        assistant.run(time_range=args.time_range)
     except Exception as e:
         logger.error(f"Fatal error in main execution: {str(e)}")
         raise 
